@@ -1,90 +1,102 @@
-Sub SortAndCategorizeAssets()
+Sub SortAndCategorizeAdaptive()
     Dim ws As Worksheet
     Dim lastRow As Long, i As Long
-    Dim score As Double
-    Dim assetSize As String, monthlyUsers As String, userImpact As String, legalRisk As String
+    Dim score As Double, maxScore As Double
+    Dim assetSize As String, monthlyUsers As String, userImpact As String, adaComplaint As String
+    Dim score_AS As Double, score_MAU As Double, score_UI As Double, score_ADA As Double
+    Dim percentOfMax As Double, priorityNum As Integer
     Dim priorityRange As Range
-    Dim priorityNum As Integer
-    
-    Set ws = ThisWorkbook.Sheets("Inventory") ' Adjust sheet name if needed
-    
-    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row ' Find last row with data
-    
-    ' Loop through rows to calculate scores
+
+    Set ws = ThisWorkbook.Sheets("Inventory")
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    maxScore = 0
+
+    ' First Pass: Score and Track Max
     For i = 2 To lastRow
-        score = 0 ' Reset score before each row
+        score_AS = 0: score_MAU = 0: score_UI = 0: score_ADA = 0
         
         assetSize = ws.Cells(i, 14).Value ' Column N
         monthlyUsers = ws.Cells(i, 15).Value ' Column O
         userImpact = ws.Cells(i, 16).Value ' Column P
-        legalRisk = ws.Cells(i, 17).Value ' Column Q
+        adaComplaint = ws.Cells(i, 17).Value ' Column Q
         
-        ' Assign scores based on predefined values
+        ' Scoring: Asset Size
         Select Case assetSize
-            Case "1 to 10": score = score + 5
-            Case "11 to 50": score = score + 10
-            Case "51 to 200": score = score + 20
-            Case "201 to 1000": score = score + 30
-            Case "1001 to 5000": score = score + 40
-            Case "More than 5k": score = score + 50
+            Case "1 to 10": score_AS = 5
+            Case "11 to 50": score_AS = 10
+            Case "51 to 200": score_AS = 20
+            Case "201 to 1000": score_AS = 30
+            Case "1001 to 5000": score_AS = 40
+            Case "More than 5k": score_AS = 50
         End Select
         
+        ' Scoring: Monthly Users
         Select Case monthlyUsers
-            Case "1 to 2,000": score = score + 10
-            Case "2,001 to 10,000": score = score + 20
-            Case "10,001 to 50,000": score = score + 30
-            Case "More than 50k": score = score + 40
+            Case "1 to 2,000": score_MAU = 10
+            Case "2,001 to 10,000": score_MAU = 20
+            Case "10,001 to 50,000": score_MAU = 30
+            Case "More than 50k": score_MAU = 40
         End Select
         
+        ' Scoring: User Impact
         Select Case userImpact
-            Case "Low - Useful Info": score = score + 10
-            Case "Med - Important Info": score = score + 30
-            Case "High - Critical Services": score = score + 50
+            Case "Low - Useful Info": score_UI = 10
+            Case "Med - Important Info": score_UI = 30
+            Case "High - Critical Services": score_UI = 50
         End Select
         
-        Select Case legalRisk
-            Case "Low": score = score + 10
-            Case "Med": score = score + 30
-            Case "High": score = score + 50
-            Case "Very High": score = score + 70
+        ' Scoring: ADA Complaints
+        Select Case adaComplaint
+            Case "Yes": score_ADA = 100
+            Case "Unknown": score_ADA = 50
+            Case "No": score_ADA = 0
         End Select
         
-        ' Store the computed score in Column AC (adjusted for user request)
-        ws.Cells(i, 29).Value = score 
-        
-        ' Set the entire row range (adjust column range if needed)
-        Set priorityRange = ws.Range(ws.Cells(i, 1), ws.Cells(i, 29)) ' A to AC
+        ' Weighted score
+        score = (score_UI * 0.4) + (score_AS * 0.3) + (score_ADA * 0.2) + (score_MAU * 0.1)
+        ws.Cells(i, 29).Value = score ' Column AC
 
-        ' Apply category & row-wide color coding
-        Select Case score
-            Case Is >= 75
+        If score > maxScore Then maxScore = score
+    Next i
+
+    ' Second Pass: Categorize based on % of max score
+    For i = 2 To lastRow
+        score = ws.Cells(i, 29).Value
+        Set priorityRange = ws.Range(ws.Cells(i, 1), ws.Cells(i, 29))
+        
+        If maxScore > 0 Then
+            percentOfMax = score / maxScore
+        Else
+            percentOfMax = 0
+        End If
+
+        Select Case percentOfMax
+            Case Is >= 0.85
                 ws.Cells(i, 19).Value = "High Priority"
-                ws.Cells(i, 19).Interior.Color = RGB(255, 200, 200) ' Light Red
-                priorityNum = 3 ' Assign numerical value for sorting
-            Case 50 To 74
+                priorityRange.Interior.Color = RGB(255, 200, 200)
+                priorityNum = 3
+            Case 0.6 To 0.849
                 ws.Cells(i, 19).Value = "Medium Priority"
-                ws.Cells(i, 19).Interior.Color = RGB(255, 255, 180) ' Light Yellow
+                priorityRange.Interior.Color = RGB(255, 255, 180)
                 priorityNum = 2
             Case Else
                 ws.Cells(i, 19).Value = "Low Priority"
-                ws.Cells(i, 19).Interior.Color = RGB(200, 255, 200) ' Light Green
+                priorityRange.Interior.Color = RGB(200, 255, 200)
                 priorityNum = 1
         End Select
-        
-        ' Store priority numeric value in Column AD (for sorting)
-        ws.Cells(i, 30).Value = priorityNum
+
+        ws.Cells(i, 30).Value = priorityNum ' Column AD
     Next i
-    
-    ' Apply Sorting: First by Priority (Numeric), then by Score (Descending)
+
+    ' Sort by priority and score
     ws.Range("A1:AD" & lastRow).Sort Key1:=ws.Range("AD2"), Order1:=xlDescending, _
-                                    Key2:=ws.Range("AC2"), Order2:=xlDescending, _
-                                    Header:=xlYes
-    
-    ' Generate summary report
+                                     Key2:=ws.Range("AC2"), Order2:=xlDescending, Header:=xlYes
+
+    ' Summary
     ws.Cells(lastRow + 2, 1).Value = "Summary Report"
     ws.Cells(lastRow + 3, 1).Value = "High Priority Assets: " & Application.CountIf(ws.Range("S2:S" & lastRow), "High Priority")
     ws.Cells(lastRow + 4, 1).Value = "Medium Priority Assets: " & Application.CountIf(ws.Range("S2:S" & lastRow), "Medium Priority")
     ws.Cells(lastRow + 5, 1).Value = "Low Priority Assets: " & Application.CountIf(ws.Range("S2:S" & lastRow), "Low Priority")
 
-    MsgBox "Sorting and categorization complete! High Priority assets are now at the top.", vbInformation
+    MsgBox "Categorization complete using adaptive thresholds based on max score.", vbInformation
 End Sub
